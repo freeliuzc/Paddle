@@ -20,6 +20,7 @@
 #include "paddle/fluid/memory/allocation/allocator_strategy.h"
 #include "paddle/fluid/memory/allocation/auto_growth_best_fit_allocator.h"
 #include "paddle/fluid/memory/allocation/cpu_allocator.h"
+#include "paddle/fluid/memory/allocation/mixed_mem_best_fit_allocator.h"
 #include "paddle/fluid/memory/allocation/naive_best_fit_allocator.h"
 #include "paddle/fluid/memory/allocation/retry_allocator.h"
 #include "paddle/fluid/memory/allocation/stat_allocator.h"
@@ -313,6 +314,18 @@ class AllocatorFacadePrivate {
         break;
       }
 
+      case AllocatorStrategy::kMixedMemOpt: {
+#if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
+        InitNaiveBestFitCPUAllocator();
+        InitNaiveBestFitCUDAPinnedAllocator();
+        int device_count = platform::GetGPUDeviceCount();
+        for (int i = 0; i < device_count; ++i) {
+          InitMixedMemOptAllocator(i, platform::CUDAPlace(i));
+        }
+#endif
+        break;
+      }
+      
       default: {
         PADDLE_THROW(platform::errors::InvalidArgument(
             "Unsupported allocator strategy: %d", static_cast<int>(strategy_)));
@@ -709,6 +722,13 @@ class AllocatorFacadePrivate {
 
   void InitThreadLocalCUDAAllocator(platform::CUDAPlace p) {
     allocators_[p] = std::make_shared<ThreadLocalCUDAAllocator>(p);
+  }
+
+  void InitMixedMemOptAllocator(int i, platform::CUDAPlace p) {
+    // auto cuda_allocator = std::make_shared<CUDAAllocator>(p);
+    // auto cuda_fit_allocator = std::make_shared<AutoGrowthBestFitAllocator>(
+    //     cuda_allocator, platform::GpuMinChunkSize());
+    allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(i, p);
   }
 
   void WrapStreamSafeCUDAAllocator(platform::CUDAPlace p, gpuStream_t stream) {

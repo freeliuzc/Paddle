@@ -29,6 +29,8 @@
 #include "paddle/fluid/platform/device/gpu/gpu_info.h"
 #include "paddle/fluid/platform/enforce.h"
 
+DECLARE_bool(use_pinned_memory_after_gpu);
+
 namespace paddle {
 namespace memory {
 namespace allocation {

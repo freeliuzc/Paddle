@@ -448,7 +448,8 @@ PADDLE_DEFINE_EXPORTED_double(
  * Allocator related FLAG
  * Name: FLAGS_allocator_strategy
  * Since Version: 1.2
- * Value Range: string, {naive_best_fit, auto_growth, thread_local},
+ * Value Range: string, {naive_best_fit, auto_growth, thread_local, 
+ *                      mixed_mem_opt},
  * default=auto_growth
  * Example:
  * Note: For selecting allocator policy of PaddlePaddle.
@@ -457,7 +458,8 @@ static constexpr char kDefaultAllocatorStrategy[] = "auto_growth";
 PADDLE_DEFINE_EXPORTED_string(
     allocator_strategy,
     kDefaultAllocatorStrategy,
-    "The allocation strategy, enum in [naive_best_fit, auto_growth]. "
+    "The allocation strategy, enum in [naive_best_fit, auto_growth, "
+    "mixed_mem_opt]. "
     "naive_best_fit means the original pre-allocated allocator of Paddle. "
     "auto_growth means the auto-growth allocator. "
     "These two strategies differ in GPU memory allocation. "
@@ -467,7 +469,9 @@ PADDLE_DEFINE_EXPORTED_string(
     "size of models may be larger). auto_growth strategy would allocate "
     "GPU memory on demand, which allows users to start several Paddle jobs "
     "on the same GPU card but may lead to more memory fragmentation "
-    "(i.e., maximum batch size of models may be smaller).");
+    "(i.e., maximum batch size of models may be smaller). mixed_mem_opt would "
+    "combine xPU-like device memory and host memory to optimize the whole "
+    "memory resource.");
 
 /**
  * Memory related FLAG
@@ -1012,3 +1016,13 @@ PADDLE_DEFINE_EXPORTED_bool(
 PADDLE_DEFINE_EXPORTED_string(jit_engine_type,
                               "PE",
                               "Choose default funciton type in JitLayer.");
+
+/**
+ * resource related FLAG
+ * Name: job_name
+ * Since Version: 2.2.0
+ * Value Range: string, default=empty
+ * Example:
+ * Note: Holds list of operation types with OneDNN kernels to be enabled.
+ */
+PADDLE_DEFINE_EXPORTED_string(job_name, "", "job name");

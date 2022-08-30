@@ -53,6 +53,11 @@ class BuddyAllocator {
   size_t Used();
   size_t GetMinChunkSize();
   size_t GetMaxChunkSize();
+  bool ReachLimit() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (limit_ == 0) return false;
+    return (total_used_ + total_free_) >= limit_;
+  }
 
  public:
   // Disable copy and assignment
@@ -103,6 +108,8 @@ class BuddyAllocator {
   size_t realloc_size_ = 0;        // the size of re-allocated chunk
   size_t extra_padding_size_ = 0;  // the size of padding to the size of memory
                                    // to alloc, especially used in NPU
+  
+  size_t limit_ = 0;       // 0 unlimited
 
  private:
   /**
