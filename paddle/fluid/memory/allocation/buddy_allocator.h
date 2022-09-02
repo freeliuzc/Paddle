@@ -53,10 +53,22 @@ class BuddyAllocator {
   size_t Used();
   size_t GetMinChunkSize();
   size_t GetMaxChunkSize();
+  
+  size_t TotalAllocated() {
+    // TODO use wr lock
+    std::lock_guard<std::mutex> lock(mutex_);
+    // VLOG(10) << "used " << total_used_ << ", free " << total_free_;
+    return total_used_ + total_free_;
+  }
   bool ReachLimit() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (limit_ == 0) return false;
     return (total_used_ + total_free_) >= limit_;
+  }
+  bool ResizeLimit(size_t limit) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    limit_ = limit;
+    return true;
   }
 
  public:

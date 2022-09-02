@@ -255,9 +255,10 @@ include(external/dlpack) # download dlpack
 include(external/xxhash) # download, build, install xxhash
 include(external/warpctc) # download, build, install warpctc
 include(external/utf8proc) # download, build, install utf8proc
+include(external/jsoncpp) # download, build, install jsoncpp
 
 list(APPEND third_party_deps extern_eigen3 extern_gflags extern_glog
-     extern_xxhash)
+     extern_xxhash extern_jsoncpp)
 list(
   APPEND
   third_party_deps
@@ -269,7 +270,7 @@ list(
 include(external/lapack) # download, build, install lapack
 
 list(APPEND third_party_deps extern_eigen3 extern_gflags extern_glog
-     extern_xxhash)
+     extern_xxhash extern_jsoncpp)
 list(
   APPEND
   third_party_deps

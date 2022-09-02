@@ -285,7 +285,7 @@ void CUDAPinnedAllocator::Free(void* p, size_t size, size_t index) {
       p, CPUPlace(), size, platform::TracerMemEventType::ReservedFree);
 }
 
-bool CUDAPinnedAllocator::UseGpu() const { return false; }
+bool CUDAPinnedAllocator::UseGpu() const { return true; }
 
 #endif
 

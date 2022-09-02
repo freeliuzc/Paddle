@@ -45,7 +45,8 @@ if(NOT ((NOT WITH_PYTHON) AND ON_INFER))
   cc_library(
     backward
     SRCS backward.cc
-    DEPS grad_tensor_holder utils autograd_meta grad_node_info switch_autotune)
+    DEPS grad_tensor_holder utils autograd_meta grad_node_info switch_autotune
+         gpu_resource_management)
 endif()
 
 cc_library(

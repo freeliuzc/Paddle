@@ -15,6 +15,7 @@
 #include "paddle/fluid/eager/backward.h"
 
 #include "paddle/fluid/eager/general_grad.h"
+#include "paddle/fluid/memory/management/gpu_resource_management.h"
 #include "paddle/phi/kernels/autotune/switch_autotune.h"
 
 namespace egr {
@@ -401,6 +402,7 @@ void Backward(
       "backward", paddle::platform::TracerEventType::UserDefined, 1);
   RunBackward(tensors, grad_tensors, retain_graph);
   phi::autotune::AutoTuneStatus::Instance().Update();
+  paddle::memory::management::GPUResourceManagement::Instance().Run();
 }
 
 std::vector<paddle::experimental::Tensor> Grad(

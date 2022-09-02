@@ -30,7 +30,7 @@ namespace paddle {
 namespace memory {
 namespace allocation {
 
-Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
+phi::Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
   PADDLE_ENFORCE_NOT_NULL(
       device_allocator_,
       platform::errors::InvalidArgument("Underlying device allocator of "
@@ -56,7 +56,7 @@ Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
       throw;
     }
   } else {
-    VLOG(2) << "device memory reached limit, try to allocate from host pinned "
+    VLOG(1) << "device memory reached limit, try to allocate from host pinned "
                "memory";
     try {
       void* host_ptr = host_allocator_->Alloc(size);

@@ -19,6 +19,10 @@ limitations under the License. */
 #include "gflags/gflags.h"
 #include "glog/logging.h"
 
+#ifdef PADDLE_WITH_CUDA
+DECLARE_uint64(initial_mix_gpu_mem_limit_in_mb);
+#endif
+
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP) || \
     defined(PADDLE_WITH_MLU) || defined(PADDLE_WITH_ASCEND_CL)
 #define USE_DEVICE
@@ -57,6 +61,9 @@ BuddyAllocator::BuddyAllocator(
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
     init_allocate_size_func_ = &platform::GpuInitAllocSize;
     re_allocate_size_func_ = &platform::GpuReallocSize;
+    if (FLAGS_initial_mix_gpu_mem_limit_in_mb != 0) {
+      limit_ = FLAGS_initial_mix_gpu_mem_limit_in_mb << 20;
+    }
 #elif defined(PADDLE_WITH_ASCEND_CL)
     init_allocate_size_func_ = &platform::NPUInitAllocSize;
     re_allocate_size_func_ = &platform::NPUReallocSize;
@@ -128,6 +135,10 @@ void* BuddyAllocator::Alloc(size_t unaligned_size) {
 
   total_used_ += size;
   total_free_ -= size;
+
+  VLOG(1) << "Allocated: " << string::HumanReadableSize(size) << ". total_used: " << string::HumanReadableSize(total_used_) 
+          << ". total_free: " << string::HumanReadableSize(total_free_) << ". total " << string::HumanReadableSize(total_free_ +total_used_);
+  VLOG(1) << "limit: " << string::HumanReadableSize(limit_);
 
   // split the allocation and return data for use
   return reinterpret_cast<MemoryBlock*>(SplitToAlloc(it, size))->Data();
