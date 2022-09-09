@@ -29,6 +29,10 @@ class StatAllocator : public Allocator {
 
   bool IsAllocThreadSafe() const override { return true; }
 
+  std::shared_ptr<Allocator> GetDeviceAllocator() {
+    return underlying_allocator_;
+  }
+
  protected:
   void FreeImpl(phi::Allocation* allocation) override {
     if (platform::is_cpu_place(allocation->place()) ||
@@ -49,20 +53,24 @@ class StatAllocator : public Allocator {
   phi::Allocation* AllocateImpl(size_t size) override {
     phi::Allocator::AllocationPtr allocation =
         underlying_allocator_->Allocate(size);
-
     const platform::Place& place = allocation->place();
+    // VLOG(0) << "flag 2";
     if (platform::is_cpu_place(place) ||
         platform::is_cuda_pinned_place(place)) {
+      // VLOG(0) << "flag 3";
       HOST_MEMORY_STAT_UPDATE(
           Allocated, place.GetDeviceId(), allocation->size());
     } else {
+      // VLOG(0) << "flag 3 1";
       DEVICE_MEMORY_STAT_UPDATE(
           Allocated, place.GetDeviceId(), allocation->size());
     }
+    // VLOG(0) << "flag 4";
     platform::RecordMemEvent(allocation->ptr(),
                              allocation->place(),
                              allocation->size(),
                              platform::TracerMemEventType::Allocate);
+    // VLOG(0) << "flag 5";
     return allocation.release();
   }
 

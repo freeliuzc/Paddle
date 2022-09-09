@@ -64,6 +64,7 @@ class BuddyAllocator {
     std::lock_guard<std::mutex> lock(mutex_);
     if (limit_ == 0) return false;
     return (total_used_ + total_free_) >= limit_;
+    // total_used_ >= limit_
   }
   bool ResizeLimit(size_t limit) {
     std::lock_guard<std::mutex> lock(mutex_);

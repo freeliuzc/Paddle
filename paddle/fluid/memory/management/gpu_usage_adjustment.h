@@ -19,6 +19,11 @@ limitations under the License. */
 #include <string>
 #include <unordered_map>
 
+#include "paddle/fluid/memory/stats.h"
+#include "paddle/fluid/memory/allocation/allocator_facade.h"
+#include "paddle/fluid/memory/allocation/stat_allocator.h"
+#include "paddle/fluid/memory/allocation/auto_growth_best_fit_allocator.h"
+#include "paddle/fluid/memory/allocation/mixed_mem_best_fit_allocator.h"
 #include "paddle/fluid/memory/allocation/buddy_allocator.h"
 
 namespace paddle {
@@ -33,19 +38,20 @@ struct GPUResourceLimitInfo {
   // For recording VGPU_MEMORY_LIMIT
   size_t initial_mem_limit_;
   // uint32 sm_util;
+  // bool need_adjust;
 };
 
 class CUDAAllocatorAdjustor {
  public:
-  size_t AdjustMemoryLimit(std::shared_ptr<detail::BuddyAllocator> allocator,
-                           int device_id, size_t new_memory_limit);
+  size_t AdjustMemoryLimit(std::shared_ptr<allocation::StatAllocator> allocator,
+                           int device_id, int64_t new_memory_limit);
 
   void GetMemPoolStats(std::shared_ptr<detail::BuddyAllocator> allocator,
                        int device_id, int64_t& deviceMemPoolSize,
                        int64_t& deviceMemStable);
 
  private:
-  size_t FreeEmptyMemory(std::shared_ptr<detail::BuddyAllocator> allocator,
+  int64_t FreeEmptyMemory(std::shared_ptr<allocation::StatAllocator> allocator,
                          int device_id, size_t target_memory_bytes);
 };
 
@@ -57,13 +63,14 @@ class GPUUsageAdjustment {
   bool AdjustMemLimit(int device_id, size_t new_mem_limt);
 
  private:
-  std::shared_ptr<detail::BuddyAllocator> GetGPUAllocator(int device_id);
+  std::shared_ptr<allocation::StatAllocator> GetGPUAllocator(int device_id);
 
   // Acquire this mutex before adjusting the GPU usage.
   std::mutex mutex_;
 
+
   struct GPUUsageInfo {
-    std::shared_ptr<detail::BuddyAllocator> gpu_allocator_;
+    std::shared_ptr<allocation::StatAllocator> gpu_allocator_;
     GPUResourceLimitInfo cur_limit_;
   };
 

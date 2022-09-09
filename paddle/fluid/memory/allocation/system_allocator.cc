@@ -45,6 +45,7 @@ limitations under the License. */
 
 DECLARE_bool(use_pinned_memory);
 DECLARE_double(fraction_of_gpu_memory_to_use);
+DECLARE_string(allocator_strategy);
 DECLARE_uint64(initial_gpu_memory_in_mb);
 DECLARE_uint64(reallocate_gpu_memory_in_mb);
 
@@ -129,6 +130,7 @@ bool CPUAllocator::UseGpu() const { return false; }
 void* GPUAllocator::Alloc(size_t* index, size_t size) {
   // CUDA documentation doesn't explain if cudaMalloc returns nullptr
   // if size is 0.  We just make sure it does.
+  VLOG(0) << "GPUAllocator";
   if (size <= 0) return nullptr;
 
   void* p;
@@ -140,6 +142,7 @@ void* GPUAllocator::Alloc(size_t* index, size_t size) {
     return p;
   } else {
     size_t avail, total, actual_avail, actual_total;
+    VLOG(0) << "System allocator";
     bool is_limited = platform::RecordedGpuMemGetInfo(
         &avail, &total, &actual_avail, &actual_total, gpu_id_);
     size_t allocated = total - avail;
@@ -201,6 +204,7 @@ bool GPUAllocator::UseGpu() const { return true; }
 // PINNED memory allows direct DMA transfers by the GPU to and from system
 // memory. It’s locked to a physical address.
 void* CUDAPinnedAllocator::Alloc(size_t* index, size_t size) {
+  VLOG(0) << "CUDAPinned";
   if (size <= 0) return nullptr;
 
   // NOTE: here, we use CUDAPinnedMaxAllocSize as the maximum memory size
@@ -285,7 +289,12 @@ void CUDAPinnedAllocator::Free(void* p, size_t size, size_t index) {
       p, CPUPlace(), size, platform::TracerMemEventType::ReservedFree);
 }
 
-bool CUDAPinnedAllocator::UseGpu() const { return true; }
+bool CUDAPinnedAllocator::UseGpu() const { 
+  // if (FLAGS_allocator_strategy == "mixed_mem_opt") {
+  //   return true;
+  // }
+  return false; 
+}
 
 #endif
 

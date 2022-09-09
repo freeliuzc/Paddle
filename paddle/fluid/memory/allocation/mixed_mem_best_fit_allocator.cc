@@ -32,96 +32,112 @@ namespace allocation {
 
 phi::Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
   PADDLE_ENFORCE_NOT_NULL(
-      device_allocator_,
+      underlying_device_allocator_,
       platform::errors::InvalidArgument("Underlying device allocator of "
                                         "MixedMemBestFitAllocator is nullptr"));
 
   PADDLE_ENFORCE_NOT_NULL(
-      host_allocator_,
+      underlying_host_allocator_,
       platform::errors::InvalidArgument("Underlying host allocator of "
                                         "MixedMemBestFitAllocator is nullptr"));
 
   std::lock_guard<std::mutex> lock(mtx_);
-  if (!device_allocator_->ReachLimit()) {
-    try {
-      void* ptr = device_allocator_->Alloc(size);
-      PADDLE_ENFORCE_NOT_NULL(
-          ptr, platform::errors::ResourceExhausted("cudaDeviceAlloc failed"));
-      Allocation* tmp_alloc = new Allocation(ptr, size, device_place_);
-      platform::MemEvenRecorder::Instance().PushMemRecord(
-          static_cast<void*>(tmp_alloc), device_place_, size);
-      return tmp_alloc;
-    } catch (...) {
-      VLOG(1) << "cuda allocation failed";
-      throw;
-    }
-  } else {
-    VLOG(1) << "device memory reached limit, try to allocate from host pinned "
-               "memory";
-    try {
-      void* host_ptr = host_allocator_->Alloc(size);
-      PADDLE_ENFORCE_NOT_NULL(host_ptr, platform::errors::ResourceExhausted(
-                                            "cudaHostAlloc failed"));
 
+  // try allocate gpu memory
+  try {
+    phi::Allocator::AllocationPtr device_allocation = 
+                    underlying_device_allocator_->Allocate(size);
+    // VLOG(0) << "Allocate GPU memory";
+    if (device_allocation != nullptr) {
+      // VLOG(0) << "GPU allocate success";
+      return device_allocation.release();
+    }
+  } catch (BadAlloc &ex) {
+    // VLOG(0) << "Allocate GPU memory fail. Try to allocate CUDAPinnedMemory";
+  }
+  
+  // try allocate CUDAPinnedMemory
+  // VLOG(0) << "Start allocate CUDAPinnedMemory";
+  try {
+    phi::Allocator::AllocationPtr host_allocation = 
+                  underlying_host_allocator_->Allocate(size);
+    if (host_allocation != nullptr) {
+      VLOG(0) << "CUDA Pinned Memory";
       void* dev_ptr;
-      // PADDLE_ENFORCE_CUDA_SUCCESS(
-      //     cudaHostGetDevicePointer(&dev_ptr, host_ptr, 0));
+      
+      void* host_ptr = host_allocation->ptr();
+      // VLOG(0) << "1";
       PADDLE_ENFORCE_GPU_SUCCESS(cudaHostGetDevicePointer(&dev_ptr, host_ptr, 0));
       PADDLE_ENFORCE_NOT_NULL(dev_ptr, platform::errors::ResourceExhausted(
-                                           "cudaHostGetDevicePointer failed"));
-      VLOG(10) << "system allocator converted host_ptr " << host_ptr
-               << " to dev_ptr: " << dev_ptr << ", size: " << size;
-
-      devptr2hostptr_.insert({dev_ptr, {host_ptr, size}});
-      Allocation* tmp_alloc = new Allocation(dev_ptr, size, device_place_);
+                                          "cudaHostGetDevicePointer failed")); 
+      // VLOG(0) << "2";
+      auto aligned_size = host_allocation->size();
+      devptr2allocation_.insert({dev_ptr, host_allocation.release()});
+      phi::Allocation* tmp_alloc = new Allocation(dev_ptr, aligned_size, device_place_);
+      // devptr2hostptr_.insert({dev_ptr, {host_ptr, size}});
+      
       return tmp_alloc;
-    } catch (...) {
-      VLOG(1) << "Still allocation failed using host memory";
-      throw;
     }
-  }
+    // void* host_ptr = underlying_host_allocator_->Alloc(size);
+    // PADDLE_ENFORCE_NOT_NULL(host_ptr, platform::errors::ResourceExhausted(
+    //                                       "cudaHostAlloc failed"));
+    // // VLOG(0) << 1;
+    // void* dev_ptr;
+    // PADDLE_ENFORCE_GPU_SUCCESS(cudaHostGetDevicePointer(&dev_ptr, host_ptr, 0));
+    // PADDLE_ENFORCE_NOT_NULL(dev_ptr, platform::errors::ResourceExhausted(
+    //                                       "cudaHostGetDevicePointer failed"));
+    // VLOG(10) << "system allocator converted host_ptr " << host_ptr
+    //           << " to dev_ptr: " << dev_ptr << ", size: " << size;
 
+    // // VLOG(0) << 2;
+    
+    // Allocation* tmp_alloc = new Allocation(dev_ptr, size, device_place_);
+    // VLOG(0) << "Allocate CUDAPinnedMemory success!";
+    // return tmp_alloc;
+
+  } catch (...) {
+    VLOG(0) << "Allocate CUDAPinnedMemory error in MixedMemBestFitAllocator!";
+    throw;
+  }
+  
   return nullptr;
 }
 
 void MixedMemBestFitAllocator::FreeImpl(phi::Allocation* allocation) {
   const auto place = allocation->place();
-  bool succ = false;
-
   std::lock_guard<std::mutex> lock(mtx_);
-  auto it = devptr2hostptr_.find(allocation->ptr());
-  if (it == devptr2hostptr_.end()) {
-    device_allocator_->Free(allocation->ptr());
-    succ = true;
-    platform::MemEvenRecorder::Instance().PopMemRecord(
-        static_cast<void*>(allocation), place);
+  // if (place.GetType() == phi::AllocationType::GPU) {
+  //   underlying_device_allocator_->Free(allocation);
+  // } else {
+  //   underlying_host_allocator_->Free(allocation);
+  // }
+  
+  auto it = devptr2allocation_.find(allocation->ptr());
+  if (it == devptr2allocation_.end()) {
+    underlying_device_allocator_->Free(allocation);
+    // VLOG(0) << "free gpu";
+    // platform::MemEvenRecorder::Instance().PopMemRecord(
+    //     static_cast<void*>(allocation), place);
   } else {
-    host_allocator_->Free(it->second.host_ptr_);
-    devptr2hostptr_.erase(it);
-    succ = true;
+    // VLOG(0) << "before free";
+    underlying_host_allocator_->Free(it->second);
+    // VLOG(0) << "before erase";
+    devptr2allocation_.erase(it);
+    // VLOG(0) << "before return";
+    delete allocation;
   }
 
   VLOG(9) << "FreeImpl called, place: " << place
           << ", addr: " << allocation->ptr()
           << ", size: " << allocation->size();
-
-  if (succ) {
-    // platform::MemEvenRecorder::Instance().PopMemRecord(
-    //     static_cast<void*>(allocation), place);
-    delete allocation;
-  }
   return;
 }
 
 uint64_t MixedMemBestFitAllocator::ReleaseImpl(const platform::Place& place) {
   VLOG(9) << "ReleaseImpl called, place: " << place;
-  uint64_t ret = 0;
-  if (platform::is_gpu_place(place)) {
-    ret = device_allocator_->Release() || host_allocator_->Release();
-  } else if (platform::is_cuda_pinned_place(place)) {
-    // ret = host_allocator_->Release();
-  }
-  return ret;
+  underlying_host_allocator_->Release(cpu_place_);
+
+  return underlying_device_allocator_->Release(place);
 }
 
 }  // namespace allocation

@@ -107,6 +107,7 @@ static size_t GpuAllocSize(bool realloc) {
   // allocated by fraction
   size_t flag_mb = realloc ? FLAGS_reallocate_gpu_memory_in_mb
                            : FLAGS_initial_gpu_memory_in_mb;
+  VLOG(0) << "realloc: " << realloc << ", size: " << string::HumanReadableSize(flag_mb);
   size_t alloc_bytes =
       (flag_mb > 0ul
            ? flag_mb << 20
@@ -222,7 +223,7 @@ class RecordedGpuMallocHelper {
                     size_t size,
                     bool malloc_managed_memory = false) {
     LockGuardPtr<std::mutex> lock(mtx_);
-    if (UNLIKELY(NeedRecord() && cur_size_.load() + size > limit_size_)) {
+    if (UNLIKELY(NeedRecord() && cur_size_.load() + size > limit_size_.load())) {
       return gpuErrorOutOfMemory;
     }
 
@@ -335,11 +336,10 @@ class RecordedGpuMallocHelper {
       }
       RaiseNonOutOfMemoryError(&result);
     }
-
     if (NeedRecord()) {
       std::lock_guard<std::mutex> guard(*mtx_);
-      *avail = std::min(*actual_avail, limit_size_ - cur_size_.load());
-      *total = std::min(*actual_total, limit_size_);
+      *avail = std::min(*actual_avail, limit_size_.load() - cur_size_.load());
+      *total = std::min(*actual_total, limit_size_.load());
       return *total < *actual_total;
     } else {
       *avail = *actual_avail;
@@ -348,11 +348,26 @@ class RecordedGpuMallocHelper {
     }
   }
 
-  inline bool NeedRecord() const { return limit_size_ != 0; }
+  inline bool NeedRecord() const { return limit_size_.load() != 0; }
 
   uint64_t RecordedSize() const { return cur_size_.load(); }
 
-  uint64_t LimitSize() const { return limit_size_; }
+  uint64_t LimitSize() const { return limit_size_.load(); }
+
+  bool ResizeLimitSize(uint64_t new_limit) {
+    try {
+      VLOG(0) << "Device:" << dev_id_ <<" Current GPU memory limit: " 
+              << string::HumanReadableSize(limit_size_.load()) 
+              << "Try to resize to new limit: " 
+              << string::HumanReadableSize(new_limit);
+      limit_size_ = new_limit;
+      VLOG(0) << "Resize Success!";
+      return true;
+    } catch (...) {
+      VLOG(0) << "Resize Fail";
+    }
+    return false;
+  }
 
 #ifdef PADDLE_WITH_CUDA
 #if CUDA_VERSION >= 10020
@@ -381,7 +396,7 @@ class RecordedGpuMallocHelper {
 
  private:
   const int dev_id_;
-  const uint64_t limit_size_;
+  std::atomic<uint64_t> limit_size_;
   std::atomic<uint64_t> cur_size_{0};
 
   mutable std::unique_ptr<std::mutex> mtx_;
@@ -429,6 +444,7 @@ bool RecordedGpuMemGetInfo(size_t *avail,
                            size_t *actual_avail,
                            size_t *actual_total,
                            int dev_id) {
+  VLOG(0) << "RecordedGpuMemGetInfo";
   return RecordedGpuMallocHelper::Instance(dev_id)->GetMemInfo(
       avail, total, actual_avail, actual_total);
 }
@@ -439,6 +455,10 @@ uint64_t RecordedGpuMallocSize(int dev_id) {
 
 uint64_t RecordedGpuLimitSize(int dev_id) {
   return RecordedGpuMallocHelper::Instance(dev_id)->LimitSize();
+}
+
+bool ResizeGpuLimitSize(int dev_id, uint64_t limit) {
+  return RecordedGpuMallocHelper::Instance(dev_id)->ResizeLimitSize(limit);
 }
 
 bool IsGpuMallocRecorded(int dev_id) {

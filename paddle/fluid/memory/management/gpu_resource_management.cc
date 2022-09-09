@@ -34,11 +34,14 @@ int ReadStringFromEnvVar(const std::string& env_var_name,
 }
 
 GPUResourceManagement& GPUResourceManagement::Instance() {
-  static GPUResourceManagement* instance = new GPUResourceManagement;
-  return *instance;
+  // static GPUResourceManagement* instance = new GPUResourceManagement;
+  static GPUResourceManagement instance;
+  return instance;
 }
 
 GPUResourceManagement::GPUResourceManagement() : job_name_(FLAGS_job_name) {
+  VLOG(0) << "init job_name: " << FLAGS_job_name;
+  
   ReadStringFromEnvVar("GPU_CONFIG_FILE", "", gpu_resource_manage_file_path_);
   if (gpu_resource_manage_file_path_.empty()) {
     enable_gpu_resource_manage_ = false;
@@ -47,7 +50,7 @@ GPUResourceManagement::GPUResourceManagement() : job_name_(FLAGS_job_name) {
   }
 
   if (job_name_.empty()) {
-    VLOG(1) << "no job_name";
+    VLOG(0) << "no job_name";
   }
 
   enable_gpu_resource_manage_ = true;
@@ -71,8 +74,11 @@ GPUResourceManagement::~GPUResourceManagement() {
 }
 
 int GPUResourceManagement::Run() {
-  VLOG(0) << "GPUResourceManagement::Run(), adjust: " << need_to_adjust_memory_
-          << ", size: " << gpu_resource_management_info_.size();
+  if (need_to_adjust_memory_ == 1) {
+    VLOG(0) << "GPUResourceManagement::Run(), adjust: " << need_to_adjust_memory_
+        << ", size: " << gpu_resource_management_info_.size();
+  }
+
   if (!need_to_adjust_memory_) {
     return 0;
   }
@@ -92,14 +98,16 @@ bool GPUResourceManagement::ParseManageInfoFromJson(
     const std::string& json_str) {
   Json::Reader reader;
   Json::Value json;
-
+  VLOG(0) << "function handler";
   if (!reader.parse(json_str, json)) {
     LOG(INFO) << "Failed to parse the json string";
     return false;
   }
 
+  VLOG(0) << "start";
   ParseMemoryLimitFromJson(json);
   ParseUsageLimitFromJson(json);
+  VLOG(0) << "end";
   VLOG(1) << "gpu resource config updated.";
   return true;
 }
@@ -118,8 +126,11 @@ void GPUResourceManagement::ParseMemoryLimitFromJson(const Json::Value& json) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto gpu_infos = json["gpuConfigInfo"];
+  auto members = gpu_infos.getMemberNames();
+  VLOG(0) << members[0] << members[1] << members[2];
   if (!gpu_infos.isMember(job_name_)) {
-    VLOG(1) << "not gpu config info provided for " << job_name_;
+    VLOG(0) << "job_name_: " << job_name_;
+    VLOG(0) << "not gpu config info provided for " << job_name_;
     return;
   }
   auto selected_info = gpu_infos[job_name_];
@@ -127,12 +138,12 @@ void GPUResourceManagement::ParseMemoryLimitFromJson(const Json::Value& json) {
   int device_id = 0;
   if (selected_info["device_id"].isNull() ||
       !selected_info["device_id"].isInt()) {
-    VLOG(1) << "invliad device_id field";
+    VLOG(0) << "invliad device_id field";
     return;
   }
   if (selected_info["maxDeviceMemMb"].isNull() ||
       !selected_info["maxDeviceMemMb"].isUInt64()) {
-    VLOG(1) << "invliad maxDeviceMemMb field";
+    VLOG(0) << "invliad maxDeviceMemMb field";
     return;
   }
   device_id = selected_info["device_id"].asInt();
@@ -149,6 +160,7 @@ void GPUResourceManagement::ParseMemoryLimitFromJson(const Json::Value& json) {
 
   if (gpu_resource_management_info_.size() != 0) {
     need_to_adjust_memory_ = true;
+    VLOG(0) << "need_to_adjust_memory_ change to true"; 
   }
 }
 

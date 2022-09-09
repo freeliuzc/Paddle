@@ -335,6 +335,7 @@ class AllocatorFacadePrivate {
         InitNaiveBestFitCPUAllocator();
         InitNaiveBestFitCUDAPinnedAllocator();
         int device_count = platform::GetGPUDeviceCount();
+        
         for (int i = 0; i < device_count; ++i) {
           InitMixedMemOptAllocator(i, platform::CUDAPlace(i));
         }
@@ -355,6 +356,9 @@ class AllocatorFacadePrivate {
     }
 
     WrapStatAllocator();
+
+    if (FLAGS)
+    WrapMixedAllocator();
 
     CheckAllocThreadSafe();
 
@@ -740,23 +744,24 @@ class AllocatorFacadePrivate {
     allocators_[p] = std::make_shared<ThreadLocalCUDAAllocator>(p);
   }
 
-  // void InitMixedMemOptAllocator(int i, 
-  //                               platform::CUDAPlace p, 
-  //                               bool allow_free_idle_chunk) {
-
-  //   // auto cuda_allocator = std::make_shared<CUDAAllocator>(p);
-  //   // auto cuda_fit_allocator = std::make_shared<AutoGrowthBestFitAllocator>(
-  //   //     cuda_allocator, platform::GpuMinChunkSize());
-  //   InitAutoGrowthCUDAAllocator(platform::CUDAPlace(i), allow_free_idle_chunk);
-  //   allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(
-  //                           allocators_[p], 
-  //                           allocators_[platform::CUDAPinnedPlace()]);
-  // }
   void InitMixedMemOptAllocator(int i, platform::CUDAPlace p) {
     // auto cuda_allocator = std::make_shared<CUDAAllocator>(p);
     // auto cuda_fit_allocator = std::make_shared<AutoGrowthBestFitAllocator>(
     //     cuda_allocator, platform::GpuMinChunkSize());
-    allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(i, p);
+    InitAutoGrowthCUDAAllocator(p, true);
+    // std::shared_ptr<detail::BuddyAllocator> underlying_host_allocator =
+    // // allocators_[platform::CUDAPinnedPlace()] = 
+    //         std::make_shared<detail::BuddyAllocator>(
+    //           std::unique_ptr<detail::SystemAllocator>(
+    //             new detail::CUDAPinnedAllocator()),
+    //           platform::GpuMinChunkSize(), platform::GpuMaxChunkSize());
+    
+    allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(
+      allocators_[p], 
+      allocators_[platform::CUDAPinnedPlace()],
+      i,
+      p,
+      platform::CUDAPinnedPlace());
   }
   
   void WrapStreamSafeCUDAAllocator(platform::CUDAPlace p, gpuStream_t stream) {

@@ -190,7 +190,7 @@ cc_library(
 cc_library(
   init
   SRCS init.cc
-  DEPS device_context custom_kernel context_pool gpu_resource_management)
+  DEPS device_context custom_kernel context_pool)
 
 # memcpy depends on device_context, here add deps individually for
 # avoiding cycle dependencies

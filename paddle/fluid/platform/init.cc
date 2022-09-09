@@ -24,7 +24,6 @@ limitations under the License. */
 #endif
 #ifdef PADDLE_WITH_CUDA
 #include "paddle/fluid/platform/dynload/cupti.h"
-#include "paddle/fluid/memory/management/gpu_resource_management.h"
 #endif
 #include "paddle/fluid/platform/device/device_wrapper.h"
 #include "paddle/fluid/platform/device_context.h"
@@ -77,8 +76,6 @@ void ParseCommandLineFlags(int argc, char **argv, bool remove) {
 
 namespace paddle {
 namespace framework {
-
-using GPUResourceManagement = paddle::memory::management::GPUResourceManagement;
 
 #ifdef _WIN32
 #define strdup _strdup
@@ -174,7 +171,6 @@ void InitDevices() {
 // documentation about CUpti_ActivityAttribute).
 #ifdef PADDLE_WITH_CUDA
   InitCupti();
-  GPUResourceManagement::Instance().Run();
 
 #endif
   /*Init all available devices by default */

@@ -150,9 +150,11 @@ FileListener* FileListener::GlobalFileListener() {
 void FileListener::FileMonitor() {
   while (!stop_running_) {
     // lock_.lock();
+    VLOG(1) << "FileMonitor Running";
     mutex_.lock();
     for (auto& listener : listeners_) {
       if (listener.second.file_info_.IsFileChanged()) {
+        VLOG(0) << "File changed";
         std::string file_content;
         if (!listener.second.file_info_.LoadFile(&file_content)) {
           // Failed to read this file, so deal with the next file.

@@ -54,8 +54,16 @@ phi::Allocation* CUDAAllocator::AllocateImpl(size_t size) {
   if (LIKELY(result == gpuSuccess)) {
     return new Allocation(ptr, size, platform::Place(place_));
   }
+  
+  if (FLAGS_allocator_strategy == "mixed_mem_opt") {
+    PADDLE_THROW_BAD_ALLOC(platform::errors::ResourceExhausted(
+        "\n\nallocator_strategy: mixed_mem_opt"
+        "GPU Memory has reach limit." 
+        "It will try release free memory or allocate CUDAPinned Memory"));
+  }
 
   size_t avail, total, actual_avail, actual_total;
+  VLOG(0) << "CUDA allocator";
   bool is_limited = platform::RecordedGpuMemGetInfo(
       &avail, &total, &actual_avail, &actual_total, place_.device);
   size_t allocated = total - avail;
