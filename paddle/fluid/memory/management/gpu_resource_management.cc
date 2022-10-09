@@ -62,7 +62,7 @@ GPUResourceManagement::GPUResourceManagement() : job_name_(FLAGS_job_name) {
       [&](const std::string& str) {
         VLOG(2) << "GPU resource management registered target file.";
         this->ParseManageInfoFromJson(str);
-        this->Run();
+        // this->Run();
       });
 }
 
@@ -78,14 +78,21 @@ int GPUResourceManagement::Run() {
     VLOG(0) << "GPUResourceManagement::Run(), adjust: " << need_to_adjust_memory_
         << ", size: " << gpu_resource_management_info_.size();
   }
-
-  if (!need_to_adjust_memory_) {
+  
+  if (!need_to_adjust_memory_ && !need_to_release_allocator_) {
+    return 0;
+  } else if (!need_to_adjust_memory_ && need_to_release_allocator_){
+    // 0:dev_id, it should be a list recording devs which should release; 
+    need_to_release_allocator_ = gpu_usage_adjustment_->ReleaseAllocatorToLimit(0);
     return 0;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& it : gpu_resource_management_info_) {
-    gpu_usage_adjustment_->AdjustMemLimit(it.first, it.second.mem_limit_);
+    // if.first: dev_id
+    // Should add a queue/map here to save the device_id which needs to release.
+    need_to_release_allocator_ = 
+        gpu_usage_adjustment_->AdjustMemLimit(it.first, it.second.mem_limit_);
   }
   need_to_adjust_memory_ = false;  // done
 
@@ -160,7 +167,9 @@ void GPUResourceManagement::ParseMemoryLimitFromJson(const Json::Value& json) {
 
   if (gpu_resource_management_info_.size() != 0) {
     need_to_adjust_memory_ = true;
-    VLOG(0) << "need_to_adjust_memory_ change to true"; 
+    need_to_release_allocator_ = true;
+    VLOG(0) << "need_to_adjust_memory_ and need_to_release_allocator_ "
+               "change to true"; 
   }
 }
 

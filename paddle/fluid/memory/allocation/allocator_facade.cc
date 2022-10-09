@@ -316,22 +316,6 @@ class AllocatorFacadePrivate {
 
       case AllocatorStrategy::kMixedMemOpt: {
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
-        // InitNaiveBestFitCPUAllocator();
-        // InitNaiveBestFitCUDAPinnedAllocator();
-        // int device_count = platform::GetGPUDeviceCount();
-
-        // for (int dev_id = 0; dev_id < device_count; ++dev_id) {
-        //   InitMixedMemOptAllocator(dev_id, 
-        //                            platform::CUDAPlace(dev_id),
-        //                            allow_free_idle_chunk);
-        // }
-        // // defalut: true  
-        // if (FLAGS_use_stream_safe_cuda_allocator) {
-        //   if (LIKELY(!IsCUDAGraphCapturing())) {
-        //     WrapStreamSafeCUDAAllocatorForDefault();
-        //   }
-        //   is_stream_safe_cuda_allocator_used_ = true;
-        // }
         InitNaiveBestFitCPUAllocator();
         InitNaiveBestFitCUDAPinnedAllocator();
         int device_count = platform::GetGPUDeviceCount();
@@ -357,8 +341,11 @@ class AllocatorFacadePrivate {
 
     WrapStatAllocator();
 
-    if (FLAGS)
-    WrapMixedAllocator();
+#ifdef PADDLE_WITH_CUDA
+    if (FLAGS_allocator_strategy == "mixed_mem_opt") {
+      WrapMixedAllocator();
+    }
+#endif
 
     CheckAllocThreadSafe();
 
@@ -756,12 +743,12 @@ class AllocatorFacadePrivate {
     //             new detail::CUDAPinnedAllocator()),
     //           platform::GpuMinChunkSize(), platform::GpuMaxChunkSize());
     
-    allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(
-      allocators_[p], 
-      allocators_[platform::CUDAPinnedPlace()],
-      i,
-      p,
-      platform::CUDAPinnedPlace());
+    // allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(
+    //   allocators_[p], 
+    //   allocators_[platform::CUDAPinnedPlace()],
+    //   i,
+    //   p,
+    //   platform::CUDAPinnedPlace());
   }
   
   void WrapStreamSafeCUDAAllocator(platform::CUDAPlace p, gpuStream_t stream) {
@@ -1019,6 +1006,19 @@ class AllocatorFacadePrivate {
       }
     }
   }
+#if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
+  void WrapMixedAllocator() {
+    for (int dev_id = 0; dev_id < platform::GetGPUDeviceCount(); ++dev_id) {
+      auto p = platform::CUDAPlace(dev_id);
+      allocators_[p] = std::make_shared<MixedMemBestFitAllocator>(
+      allocators_[p], 
+      allocators_[platform::CUDAPinnedPlace()],
+      dev_id,
+      p,
+      platform::CUDAPinnedPlace());
+    }
+  }
+#endif
 
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
   // a standalone CUDA allocator to support multi-stream GC in new executor

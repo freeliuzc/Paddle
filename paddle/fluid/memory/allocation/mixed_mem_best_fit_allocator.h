@@ -99,8 +99,10 @@ class MixedMemBestFitAllocator : public Allocator {
   platform::CUDAPinnedPlace cpu_place_;
 
   std::mutex mtx_;
-  std::unordered_map<void*, MappedAddr> devptr2hostptr_;
+  // std::unordered_map<void*, MappedAddr> devptr2hostptr_;
   std::unordered_map<void*, phi::Allocation*> devptr2allocation_;
+  std::unordered_map<void*, phi::Allocator::AllocationPtr> devptr2hostptr_;
+
 };
 
 }  // namespace allocation

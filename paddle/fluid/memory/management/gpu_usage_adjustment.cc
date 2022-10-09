@@ -24,7 +24,7 @@ namespace paddle {
 namespace memory {
 namespace management {
 
-size_t CUDAAllocatorAdjustor::AdjustMemoryLimit(
+bool CUDAAllocatorAdjustor::AdjustMemoryLimit(
     std::shared_ptr<allocation::StatAllocator> allocator, 
     int device_id,
     int64_t new_memory_limit) {
@@ -36,7 +36,20 @@ size_t CUDAAllocatorAdjustor::AdjustMemoryLimit(
   VLOG(0) << "try to adjust device_id " << device_id << " to "
           << string::HumanReadableSize(new_memory_limit) << ", current allocated "
           << string::HumanReadableSize(current_reserved_memory);
-  size_t new_limit = new_memory_limit;
+  // Resize limit
+  platform::ResizeGpuLimitSize(device_id, new_memory_limit);
+
+  if (current_reserved_memory <= new_memory_limit) {
+    return true;
+  } else {
+    auto device_reserved_memory = FreeEmptyMemory(
+                          allocator, device_id);
+    if (device_reserved_memory <= new_memory_limit) {
+      return true;
+    } 
+  }
+  return false;
+  // size_t new_limit = new_memory_limit;
   // if (new_memory_limit < current_reserved_memory) {
   //   int64_t free_res = FreeEmptyMemory(allocator, device_id, new_memory_limit);
   //   if (free_res > new_memory_limit) {
@@ -44,37 +57,35 @@ size_t CUDAAllocatorAdjustor::AdjustMemoryLimit(
   //   }
   // }
   // platform::RecordedLimitResize(device_id, new_memory_limit);
-    
-  if (new_memory_limit >= current_reserved_memory) {
-    // bool ok =
-    // paddle::platform::RecordedLimitResize(device_id, new_memory_limit);
-    bool ok = platform::ResizeGpuLimitSize(device_id, new_memory_limit);;
-    VLOG(2) << "RecordedLimitResize: " << ok;
-    if (ok) {
-      new_limit = new_memory_limit;
-    } else {
-      // TODO
-    }
-  } else {
-    // total_region_allocated_bytes_ > new_memory_limit:
-    // shrink, need to free memory
-    int64_t free_res = FreeEmptyMemory(allocator, device_id, new_memory_limit);
-    VLOG(2) << "after free, alloc size " << free_res;
-    if (free_res <= new_memory_limit) {
-      VLOG(2) << "successful";
-      new_limit = new_memory_limit;
-    } else {
-      VLOG(2) << "failed";
-      new_limit = free_res;
-    }
-    // bool ok = paddle::platform::RecordedLimitResize(device_id, new_limit);
-    // bool ok = allocator->ResizeLimit(free_res);
-    bool ok = platform::ResizeGpuLimitSize(device_id, free_res);
-    VLOG(2) << "RecordedLimitResize: " << ok;
-  }
+  // platform::ResizeGpuLimitSize(device_id, new_memory_limit);
+  // if (new_memory_limit >= current_reserved_memory) {
+  //   // bool ok =
+  //   // paddle::platform::RecordedLimitResize(device_id, new_memory_limit);
+  //   bool ok = platform::ResizeGpuLimitSize(device_id, new_memory_limit);;
+  //   VLOG(2) << "RecordedLimitResize: " << ok;
 
-  // platform::RecordedLimitResize(device_id, new_memory_limit);
-  return new_limit;
+  // } else {
+  //   // total_region_allocated_bytes_ > new_memory_limit:
+  //   // shrink, need to free memory
+  //   auto device_reserved_memory = FreeEmptyMemory(allocator, device_id, new_memory_limit);
+  //   // auto device_reserved_memory = DEVICE_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id);
+  //   VLOG(2) << "after free, alloc size " << device_reserved_memory;
+  //   if (device_reserved_memory <= new_memory_limit) {
+  //     VLOG(2) << "successful";
+  //     return device_reserved_memory;
+  //     // device_reserved_memory = new_memory_limit;
+  //   } else {
+  //     VLOG(2) << "failed";
+  //     device_reserved_memory = ;
+  //   }
+  //   // bool ok = paddle::platform::RecordedLimitResize(device_id, new_limit);
+  //   // bool ok = allocator->ResizeLimit(free_res);
+  //   bool ok = platform::ResizeGpuLimitSize(device_id, new_memory_limit);
+  //   VLOG(2) << "RecordedLimitResize: " << ok;
+  // }
+
+  // // platform::RecordedLimitResize(device_id, new_memory_limit);
+  // return device_reserved_memory;
 }
 
 void CUDAAllocatorAdjustor::GetMemPoolStats(
@@ -86,14 +97,21 @@ void CUDAAllocatorAdjustor::GetMemPoolStats(
 
 int64_t CUDAAllocatorAdjustor::FreeEmptyMemory(
     std::shared_ptr<allocation::StatAllocator> allocator, 
-    int device_id,
-    size_t target_memory_bytes) {
+    int device_id) {
   platform::CUDAPlace place(device_id);
   size_t free_res = allocator->Release(place);
   VLOG(2) << "Release: " << free_res;
   return DEVICE_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id);
-  // return allocator->TotalAllocated();
 }
+
+bool GPUUsageAdjustment::ReleaseAllocatorToLimit(int device_id) {
+  auto allo = GetGPUAllocator(device_id);
+  cuda_allocator_adjustor_->FreeEmptyMemory(allo, device_id);
+  bool success = int64_t(platform::RecordedGpuLimitSize(device_id)) > 
+        DEVICE_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id);
+  return success;
+}
+
 
 bool GPUUsageAdjustment::AdjustMemLimit(int device_id, size_t new_mem_limit) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -119,27 +137,17 @@ bool GPUUsageAdjustment::AdjustMemLimit(int device_id, size_t new_mem_limit) {
   }
 
   if (cur_info->second.cur_limit_.mem_limit_ == new_mem_limit) {
-    // unchanged
-    VLOG(1) << "limit unchanged.";
-    return false;
+    return true;
   }
-
-  std::unique_ptr<CUDAAllocatorAdjustor> adj =
-      std::make_unique<CUDAAllocatorAdjustor>();
 
   VLOG(2) << "Start to manage the mem size limit to " << new_mem_limit
           << "b of device: " << device_id;
 
-  size_t cur_mem_limit = adj->AdjustMemoryLimit(cur_info->second.gpu_allocator_,
-                                                device_id, new_mem_limit);
-
-  if (cur_mem_limit > new_mem_limit) {
-    VLOG(2) << "Failed to manage the mem size limit to " << new_mem_limit
-            << " of device device_id: " << device_id;
-    return false;
-  }
-
-  return true;
+  bool success = cuda_allocator_adjustor_->AdjustMemoryLimit(
+                             cur_info->second.gpu_allocator_,
+                             device_id, 
+                             new_mem_limit);
+  return success;
 }
 
 std::shared_ptr<allocation::StatAllocator> GPUUsageAdjustment::GetGPUAllocator(
@@ -152,9 +160,13 @@ std::shared_ptr<allocation::StatAllocator> GPUUsageAdjustment::GetGPUAllocator(
       allocator,
       platform::errors::NotFound("Allocator not found for device %s", place));
   VLOG(0) << "allocator type " << typeid(*allocator.get()).name();
-  auto stat_allocator = 
-      std::dynamic_pointer_cast<allocation::StatAllocator>(
-          allocator);
+  auto mixed_allocator = std::dynamic_pointer_cast<
+                           allocation::MixedMemBestFitAllocator>(
+                           allocator);
+  auto stat_allocator = std::dynamic_pointer_cast<
+                           allocation::StatAllocator>(
+                           mixed_allocator->GetDeviceAllocator());
+  
   PADDLE_ENFORCE_NOT_NULL(stat_allocator,
                           platform::errors::NotFound(
                             "StatAllocator not found for device %s", place));

@@ -47,9 +47,18 @@ phi::Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
   try {
     phi::Allocator::AllocationPtr device_allocation = 
                     underlying_device_allocator_->Allocate(size);
-    // VLOG(0) << "Allocate GPU memory";
+    
     if (device_allocation != nullptr) {
-      // VLOG(0) << "GPU allocate success";
+      VLOG(0) << "Allocate GPU memory";
+      auto device_allocated_memory = DEVICE_MEMORY_STAT_CURRENT_VALUE(Allocated, device_id_);
+      auto host_allocated_memory = HOST_MEMORY_STAT_CURRENT_VALUE(Allocated, device_id_);
+      auto device_reserved_memory = DEVICE_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id_);
+      auto host_reserved_memory = HOST_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id_);
+      VLOG(0) << "Device_allocated_memory: " << string::HumanReadableSize(device_allocated_memory)
+              << "\nDevice_reserved_memory: " << string::HumanReadableSize(device_reserved_memory)
+              << "\nHost_allocated_memory: " << string::HumanReadableSize(host_allocated_memory)
+              << "\nhost_reserved_memory: " << string::HumanReadableSize(host_reserved_memory); 
+      
       return device_allocation.release();
     }
   } catch (BadAlloc &ex) {
@@ -63,6 +72,15 @@ phi::Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
                   underlying_host_allocator_->Allocate(size);
     if (host_allocation != nullptr) {
       VLOG(0) << "CUDA Pinned Memory";
+      VLOG(0) << "Allocate GPU memory";
+      auto device_allocated_memory = DEVICE_MEMORY_STAT_CURRENT_VALUE(Allocated, device_id_);
+      auto host_allocated_memory = HOST_MEMORY_STAT_CURRENT_VALUE(Allocated, device_id_);
+      auto device_reserved_memory = DEVICE_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id_);
+      auto host_reserved_memory = HOST_MEMORY_STAT_CURRENT_VALUE(Reserved, device_id_);
+      VLOG(0) << "Device_allocated_memory: " << string::HumanReadableSize(device_allocated_memory)
+              << "\nDevice_reserved_memory: " << string::HumanReadableSize(device_reserved_memory)
+              << "\nHost_allocated_memory: " << string::HumanReadableSize(host_allocated_memory)
+              << "\nhost_reserved_memory: " << string::HumanReadableSize(host_reserved_memory); 
       void* dev_ptr;
       
       void* host_ptr = host_allocation->ptr();
@@ -72,7 +90,7 @@ phi::Allocation* MixedMemBestFitAllocator::AllocateImpl(size_t size) {
                                           "cudaHostGetDevicePointer failed")); 
       // VLOG(0) << "2";
       auto aligned_size = host_allocation->size();
-      devptr2allocation_.insert({dev_ptr, host_allocation.release()});
+      devptr2hostptr_.insert({dev_ptr, std::move(host_allocation)});
       phi::Allocation* tmp_alloc = new Allocation(dev_ptr, aligned_size, device_place_);
       // devptr2hostptr_.insert({dev_ptr, {host_ptr, size}});
       
@@ -112,17 +130,17 @@ void MixedMemBestFitAllocator::FreeImpl(phi::Allocation* allocation) {
   //   underlying_host_allocator_->Free(allocation);
   // }
   
-  auto it = devptr2allocation_.find(allocation->ptr());
-  if (it == devptr2allocation_.end()) {
+  auto it = devptr2hostptr_.find(allocation->ptr());
+  if (it == devptr2hostptr_.end()) {
     underlying_device_allocator_->Free(allocation);
     // VLOG(0) << "free gpu";
     // platform::MemEvenRecorder::Instance().PopMemRecord(
     //     static_cast<void*>(allocation), place);
   } else {
     // VLOG(0) << "before free";
-    underlying_host_allocator_->Free(it->second);
+    underlying_host_allocator_->Free((it->second).release());
     // VLOG(0) << "before erase";
-    devptr2allocation_.erase(it);
+    devptr2hostptr_.erase(it);
     // VLOG(0) << "before return";
     delete allocation;
   }

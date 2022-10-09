@@ -108,7 +108,8 @@ class GPUResourceManagement {
   std::unordered_map<const void*, uint64_t> executor_queued_op_num_;
 
   // Determine if we need to adjust the GPU usage limit.
-  std::atomic<bool> need_to_adjust_memory_;
+  std::atomic<bool> need_to_adjust_memory_{false};
+  std::atomic<bool> need_to_release_allocator_{false};
 
   // For performing the adjustment.
   std::unique_ptr<GPUUsageAdjustment> gpu_usage_adjustment_;

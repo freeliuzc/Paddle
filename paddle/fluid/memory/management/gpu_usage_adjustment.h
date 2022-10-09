@@ -43,22 +43,26 @@ struct GPUResourceLimitInfo {
 
 class CUDAAllocatorAdjustor {
  public:
-  size_t AdjustMemoryLimit(std::shared_ptr<allocation::StatAllocator> allocator,
+  bool AdjustMemoryLimit(std::shared_ptr<allocation::StatAllocator> allocator,
                            int device_id, int64_t new_memory_limit);
 
   void GetMemPoolStats(std::shared_ptr<detail::BuddyAllocator> allocator,
                        int device_id, int64_t& deviceMemPoolSize,
                        int64_t& deviceMemStable);
 
- private:
+//  private:
   int64_t FreeEmptyMemory(std::shared_ptr<allocation::StatAllocator> allocator,
-                         int device_id, size_t target_memory_bytes);
+                         int device_id);
 };
 
 // For performing the adjustment of the usage of both the GPU memory and
 // the SM (streaming multiprocessor).
 class GPUUsageAdjustment {
  public:
+  GPUUsageAdjustment() {
+    cuda_allocator_adjustor_ = std::make_unique<CUDAAllocatorAdjustor>();
+  }
+  bool ReleaseAllocatorToLimit(int device_id);
   // Adjust the memory limit of the giving GPU.
   bool AdjustMemLimit(int device_id, size_t new_mem_limt);
 
@@ -74,6 +78,7 @@ class GPUUsageAdjustment {
     GPUResourceLimitInfo cur_limit_;
   };
 
+  std::unique_ptr<CUDAAllocatorAdjustor> cuda_allocator_adjustor_;
   // For recording current GPU usage info.
   // key: device_id
   std::unordered_map<int, GPUUsageInfo> cur_usage_info_;
